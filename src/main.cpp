@@ -1,14 +1,16 @@
 #include "gablog.h"
 
+
 int main()
 {
-    Logger::Init();
-
-    GABGL_TRACE("");
-    GABGL_INFO("");
-    GABGL_WARN("");
-    GABGL_ERROR("");
-    GABGL_CRITICAL("");
+    GABLOG_TRACE("Test");
+    GABLOG_INFO("Test");
+    GABLOG_WARN("Test");
+    GABLOG_ERROR("Test");
+    GABLOG_CRITICAL("Test");
     bool test = false;
-    GABGL_ASSERT(test, "Test");
+    //GABLOG_ASSERT(test, "Test");
+
+    TRACE("Test");
+    ASSERT(test, "Test");
 }
