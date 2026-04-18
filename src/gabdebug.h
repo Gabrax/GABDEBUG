@@ -22,7 +22,6 @@ typedef enum
     LOG_INFO,
     LOG_WARN,
     LOG_ERROR,
-    LOG_CRITICAL,
     LOG_ASSERT
 } LogLevel;
 
@@ -41,7 +40,6 @@ void gablog_log(LogLevel level, const char* file, int line, const char* fmt, ...
     #define GABLOG_INFO(...)     gablog_log(LOG_INFO,  __FILE__, __LINE__, __VA_ARGS__)
     #define GABLOG_WARN(...)     gablog_log(LOG_WARN,  __FILE__, __LINE__, __VA_ARGS__)
     #define GABLOG_ERROR(...)    gablog_log(LOG_ERROR, __FILE__, __LINE__, __VA_ARGS__)
-    #define GABLOG_CRITICAL(...) gablog_log(LOG_CRITICAL, __FILE__, __LINE__, __VA_ARGS__)
     #define GABLOG_ASSERT(x, fmt, ...)                                      \
     do {                                                                    \
         if (!(x)) {                                                         \
@@ -56,7 +54,6 @@ void gablog_log(LogLevel level, const char* file, int line, const char* fmt, ...
         #define INFO(...)     GABLOG_INFO(__VA_ARGS__)
         #define WARN(...)     GABLOG_WARN(__VA_ARGS__)
         #define ERROR(...)    GABLOG_ERROR(__VA_ARGS__)
-        #define CRITICAL(...) GABLOG_CRITICAL(__VA_ARGS__)
         #define ASSERT(...) GABLOG_ASSERT(__VA_ARGS__)
     #endif
 #else
@@ -64,7 +61,6 @@ void gablog_log(LogLevel level, const char* file, int line, const char* fmt, ...
     #define GABLOG_INFO(...)     ((void)0)
     #define GABLOG_WARN(...)     ((void)0)
     #define GABLOG_ERROR(...)    ((void)0)
-    #define GABLOG_CRITICAL(...) ((void)0)
     #define GABLOG_ASSERT(...)   ((void)0)
 
     #ifdef GABLOG_STRIP_PREFIX
@@ -171,7 +167,7 @@ static inline const char* gablog_strip_filename(const char* path)
     return slash ? slash + 1 : path;
 }
 
-static inline const char* LevelToString(LogLevel level)
+static inline const char* LevelToString(const LogLevel level)
 {
     switch (level)
     {
@@ -179,13 +175,12 @@ static inline const char* LevelToString(LogLevel level)
         case LOG_INFO:     return "INFO";
         case LOG_WARN:     return "WARN";
         case LOG_ERROR:    return "ERROR";
-        case LOG_CRITICAL: return "CRIT";
         case LOG_ASSERT:   return "ASSERT";
         default:           return "UNKWN";
     }
 }
 
-static inline const char* LevelColor(LogLevel level)
+static inline const char* LevelColor(const LogLevel level)
 {
     if (!g_UseColor)
         return "";
@@ -196,7 +191,6 @@ static inline const char* LevelColor(LogLevel level)
         case LOG_INFO:     return "\033[32m";
         case LOG_WARN:     return "\033[33m";
         case LOG_ERROR:    return "\033[31m";
-        case LOG_CRITICAL: return "\033[41m";
         case LOG_ASSERT:   return "\033[41m";
         default:           return "\033[0m";
     }
@@ -249,8 +243,8 @@ void gablog_log(const LogLevel level, const char* file, int line, const char* fm
 
 #include <stdint.h>
 
-#define gabMAX_QUERIES_PER_FRAME 256
-#define gabQUERY_LATENCY 3
+#define GABMAX_QUERIES_PER_FRAME 256
+#define GABQUERY_LATENCY 3
 
 #ifdef GAB_GL
 #include <glad/glad.h>
@@ -260,7 +254,7 @@ typedef struct
 {
     const char* name;
     float cpuTime;
-    float gpuTime; /* 0 if GPU unavailable */
+    float gpuTime; // 0 if GPU unavailable
 } GABProfileResult;
 
 typedef struct
@@ -301,16 +295,34 @@ const GABProfileResult* gabprofiler_get_results(uint32_t* count);
 
     #define GABPROFILER_CLEAR_RESULTS() gabprofiler_begin_frame()
 
+    #define GABPROFILER_PRINT_RESULTS() \
+        do { \
+            uint32_t count; \
+            const GABProfileResult* results = gabprofiler_get_results(&count); \
+            for (uint32_t i = 0; i < count; i++) \
+            { \
+                printf("%s: CPU %.2f ms | GPU %.2f ms\n", \
+                results[i].name, \
+                results[i].cpuTime, \
+                results[i].gpuTime); \
+            } \
+        } while(0)
+
     #if GABPROFILER_STRIP_PREFIX
         #define PROFILE_SCOPE(name) GABPROFILE_SCOPE(name)
         #define PROFILER_CLEAR_RESULTS() GABPROFILER_CLEAR_RESULTS()
+        #define PROFILER_PRINT_RESULTS() GABPROFILER_PRINT_RESULTS()
     #endif
 #else
     #define GABPROFILE_SCOPE(name)
     #define GABPROFILER_CLEAR_RESULTS()
+    #define GABPROFILER_PRINT_RESULTS()
 
-    #define PROFILE_SCOPE(name)
-    #define PROFILER_CLEAR_RESULTS()
+    #if GABPROFILER_STRIP_PREFIX
+        #define PROFILE_SCOPE(name)
+        #define PROFILER_CLEAR_RESULTS()
+        #define PROFILER_PRINT_RESULTS()
+    #endif
 #endif
 
 #ifdef GABPROFILER_IMPLEMENTATION
@@ -372,16 +384,16 @@ static uint32_t s_CurrentFrame = 0;
 static uint32_t s_QueryIndex = 0;
 
 #ifdef GAB_GL
-static GLuint s_QueryPool[gabQUERY_LATENCY][gabMAX_QUERIES_PER_FRAME];
+static GLuint s_QueryPool[GABQUERY_LATENCY][GABMAX_QUERIES_PER_FRAME];
 #endif
 
-static GPUQueryData s_FrameQueries[gabQUERY_LATENCY][gabMAX_QUERIES_PER_FRAME];
-static uint32_t s_FrameQueryCounts[gabQUERY_LATENCY];
+static GPUQueryData s_FrameQueries[GABQUERY_LATENCY][GABMAX_QUERIES_PER_FRAME];
+static uint32_t s_FrameQueryCounts[GABQUERY_LATENCY];
 
-static GABProfileResult s_Results[gabMAX_QUERIES_PER_FRAME];
+static GABProfileResult s_Results[GABMAX_QUERIES_PER_FRAME];
 static uint32_t s_ResultCount = 0;
 
-static void resolve_frame(uint32_t frameIndex)
+static void resolve_frame(const uint32_t frameIndex)
 {
     uint32_t count = s_FrameQueryCounts[frameIndex];
 
@@ -400,7 +412,7 @@ static void resolve_frame(uint32_t frameIndex)
         }
 #endif
 
-        if (s_ResultCount < gabMAX_QUERIES_PER_FRAME)
+        if (s_ResultCount < GABMAX_QUERIES_PER_FRAME)
         {
             s_Results[s_ResultCount++] = (GABProfileResult){
                 q->name,
@@ -413,20 +425,25 @@ static void resolve_frame(uint32_t frameIndex)
     s_FrameQueryCounts[frameIndex] = 0;
 }
 
+static int isProfilerInitialized = 0;
+
 void gabprofiler_init(void)
 {
+    if (isProfilerInitialized) return;
+    isProfilerInitialized = 1;
+
 #ifdef _WIN32
     QueryPerformanceFrequency(&s_Frequency);
 #endif
 
 #ifdef GAB_GL
-    for (uint32_t i = 0; i < gabQUERY_LATENCY; i++)
+    for (uint32_t i = 0; i < GABQUERY_LATENCY; i++)
     {
-        glGenQueries(gabMAX_QUERIES_PER_FRAME, s_QueryPool[i]);
+        glGenQueries(GABMAX_QUERIES_PER_FRAME, s_QueryPool[i]);
     }
 #endif
 
-    for (uint32_t i = 0; i < gabQUERY_LATENCY; i++)
+    for (uint32_t i = 0; i < GABQUERY_LATENCY; i++)
     {
         s_FrameQueryCounts[i] = 0;
     }
@@ -435,28 +452,30 @@ void gabprofiler_init(void)
 void gabprofiler_shutdown(void)
 {
 #ifdef GAB_GL
-    for (uint32_t i = 0; i < gabQUERY_LATENCY; i++)
+    for (uint32_t i = 0; i < GABQUERY_LATENCY; i++)
     {
-        glDeleteQueries(gabMAX_QUERIES_PER_FRAME, s_QueryPool[i]);
+        glDeleteQueries(GABMAX_QUERIES_PER_FRAME, s_QueryPool[i]);
     }
 #endif
 }
 
 void gabprofiler_begin_frame(void)
 {
+    gabprofiler_init();
+
     s_ResultCount = 0;
 
-    s_CurrentFrame = (s_CurrentFrame + 1) % gabQUERY_LATENCY;
+    s_CurrentFrame = (s_CurrentFrame + 1) % GABQUERY_LATENCY;
     s_QueryIndex = 0;
 
-    uint32_t resolveIndex = (s_CurrentFrame + 1) % gabQUERY_LATENCY;
+    uint32_t resolveIndex = (s_CurrentFrame + 1) % GABQUERY_LATENCY;
     resolve_frame(resolveIndex);
 }
 
 #ifdef GAB_GL
 static GLuint acquire_query(void)
 {
-    if (s_QueryIndex >= gabMAX_QUERIES_PER_FRAME)
+    if (s_QueryIndex >= GABMAX_QUERIES_PER_FRAME)
         return 0;
 
     return s_QueryPool[s_CurrentFrame][s_QueryIndex++];
@@ -499,7 +518,7 @@ void gabprofiler_end(GABProfilerScope* scope)
 
     uint32_t index = s_FrameQueryCounts[s_CurrentFrame];
 
-    if (index < gabMAX_QUERIES_PER_FRAME)
+    if (index < GABMAX_QUERIES_PER_FRAME)
     {
         s_FrameQueries[s_CurrentFrame][index].name = scope->name;
         s_FrameQueries[s_CurrentFrame][index].cpuTime = cpuTime;
