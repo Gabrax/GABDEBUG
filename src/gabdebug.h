@@ -16,6 +16,8 @@ extern "C" {
     #define GABLOG_STRIP_PREFIX
 #endif
 
+#if GABLOG_ENABLE
+
 typedef enum
 {
     LOG_TRACE,
@@ -35,7 +37,6 @@ void gablog_log(LogLevel level, const char* file, int line, const char* fmt, ...
     #define DEBUG_BREAK() raise(SIGTRAP)
 #endif
 
-#if GABLOG_ENABLE
     #define GABLOG_TRACE(...)    gablog_log(LOG_TRACE, __FILE__, __LINE__, __VA_ARGS__)
     #define GABLOG_INFO(...)     gablog_log(LOG_INFO,  __FILE__, __LINE__, __VA_ARGS__)
     #define GABLOG_WARN(...)     gablog_log(LOG_WARN,  __FILE__, __LINE__, __VA_ARGS__)
@@ -50,11 +51,11 @@ void gablog_log(LogLevel level, const char* file, int line, const char* fmt, ...
     } while(0)
 
     #ifdef GABLOG_STRIP_PREFIX
-        #define TRACE(...)    GABLOG_TRACE(__VA_ARGS__)
-        #define INFO(...)     GABLOG_INFO(__VA_ARGS__)
-        #define WARN(...)     GABLOG_WARN(__VA_ARGS__)
-        #define ERROR(...)    GABLOG_ERROR(__VA_ARGS__)
-        #define ASSERT(...) GABLOG_ASSERT(__VA_ARGS__)
+        #define LOG_TRACE(...)    GABLOG_TRACE(__VA_ARGS__)
+        #define LOG_INFO(...)     GABLOG_INFO(__VA_ARGS__)
+        #define LOG_WARN(...)     GABLOG_WARN(__VA_ARGS__)
+        #define LOG_ERROR(...)    GABLOG_ERROR(__VA_ARGS__)
+        #define LOG_ASSERT(...)   GABLOG_ASSERT(__VA_ARGS__)
     #endif
 #else
     #define GABLOG_TRACE(...)    ((void)0)
@@ -64,16 +65,15 @@ void gablog_log(LogLevel level, const char* file, int line, const char* fmt, ...
     #define GABLOG_ASSERT(...)   ((void)0)
 
     #ifdef GABLOG_STRIP_PREFIX
-        #define TRACE(...)    ((void)0)
-        #define INFO(...)     ((void)0)
-        #define WARN(...)     ((void)0)
-        #define ERROR(...)    ((void)0)
-        #define CRITICAL(...) ((void)0)
-        #define ASSERT(...)   ((void)0)
+        #define LOG_TRACE(...)    ((void)0)
+        #define LOG_INFO(...)     ((void)0)
+        #define LOG_WARN(...)     ((void)0)
+        #define LOG_ERROR(...)    ((void)0)
+        #define LOG_ASSERT(...)   ((void)0)
     #endif
 #endif
 
-#ifdef GABLOG_IMPLEMENTATION
+#if defined(GABLOG_IMPLEMENTATION) && GABLOG_ENABLE
 
 #include <string.h>
 
@@ -241,110 +241,71 @@ void gablog_log(const LogLevel level, const char* file, int line, const char* fm
 }
 #endif /* GABLOG_IMPLEMENTATION */
 
-#include <stdint.h>
-
-#define GABMAX_QUERIES_PER_FRAME 256
-#define GABQUERY_LATENCY 3
-
-#ifdef GAB_GL
-#include <glad/glad.h>
-#endif
-
-typedef struct
-{
-    const char* name;
-    float cpuTime;
-    float gpuTime; // 0 if GPU unavailable
-} GABProfileResult;
-
-typedef struct
-{
-    const char* name;
-    unsigned int query;
-    int hasQuery;
-    double start;
-} GABProfilerScope;
-
-void gabprofiler_init(void);
-void gabprofiler_shutdown(void);
-void gabprofiler_begin_frame(void);
-
-GABProfilerScope gabprofiler_begin(const char* name);
-void gabprofiler_end(GABProfilerScope* scope);
-
-const GABProfileResult* gabprofiler_get_results(uint32_t* count);
-
 #ifndef GABPROFILER_ENABLE
     #define GABPROFILER_ENABLE 1
 #endif
 
-#ifndef GABPROFILER_UNSTRIP_PREFIX
-    #define GABPROFILER_STRIP_PREFIX 1
-#endif
-
-#define GAB_CONCAT_IMPL(x, y) x##y
-#define GAB_CONCAT(x, y) GAB_CONCAT_IMPL(x, y)
-
 #if GABPROFILER_ENABLE
-    #define GABPROFILE_SCOPE(name) \
-        GABProfilerScope GAB_CONCAT(scope_, __LINE__) = gabprofiler_begin(name); \
-        for (int GAB_CONCAT(_once_, __LINE__) = 1; \
-            GAB_CONCAT(_once_, __LINE__); \
-            gabprofiler_end(&GAB_CONCAT(scope_, __LINE__)), \
-            GAB_CONCAT(_once_, __LINE__) = 0)
 
-    #define GABPROFILER_CLEAR_RESULTS() gabprofiler_begin_frame()
+typedef struct GABProfileNode
+{
+    const char* name;
+    float cpuTime;
 
-    #define GABPROFILER_PRINT_RESULTS() \
-        do { \
-            uint32_t count; \
-            const GABProfileResult* results = gabprofiler_get_results(&count); \
-            for (uint32_t i = 0; i < count; i++) \
-            { \
-                printf("%s: CPU %.2f ms | GPU %.2f ms\n", \
-                results[i].name, \
-                results[i].cpuTime, \
-                results[i].gpuTime); \
-            } \
-        } while(0)
+    struct GABProfileNode* parent;
+    struct GABProfileNode* firstChild;
+    struct GABProfileNode* lastChild;
+    struct GABProfileNode* nextSibling;
+} GABProfileNode;
 
-    #if GABPROFILER_STRIP_PREFIX
-        #define PROFILE_SCOPE(name) GABPROFILE_SCOPE(name)
-        #define PROFILER_CLEAR_RESULTS() GABPROFILER_CLEAR_RESULTS()
-        #define PROFILER_PRINT_RESULTS() GABPROFILER_PRINT_RESULTS()
-    #endif
+void gabprofiler_begin_frame(void);
+GABProfileNode* gabprofiler_get_root(void);
+
+#define GAB_CONCAT_IMPL(x,y) x##y
+#define GAB_CONCAT(x,y) GAB_CONCAT_IMPL(x,y)
+
+typedef struct
+{
+    GABProfileNode* node;
+    double start;
+} GABProfilerScope;
+
+GABProfilerScope gabprofiler_begin(const char* name);
+void gabprofiler_end(GABProfilerScope* scope);
+void gabprofiler_print(void);
+
+#define GABPROFILER_CLEAR() gabprofiler_begin_frame()
+#define GABPROFILE_SCOPE(name) \
+    GABProfilerScope GAB_CONCAT(scope_, __LINE__) = gabprofiler_begin(name); \
+    for (int GAB_CONCAT(_once_, __LINE__) = 1; \
+        GAB_CONCAT(_once_, __LINE__); \
+        gabprofiler_end(&GAB_CONCAT(scope_, __LINE__)), \
+        GAB_CONCAT(_once_, __LINE__) = 0)
+
+#define GABPROFILER_PRINT() gabprofiler_print()
+
 #else
+    #define GABPROFILER_CLEAR()
     #define GABPROFILE_SCOPE(name)
-    #define GABPROFILER_CLEAR_RESULTS()
-    #define GABPROFILER_PRINT_RESULTS()
-
-    #if GABPROFILER_STRIP_PREFIX
-        #define PROFILE_SCOPE(name)
-        #define PROFILER_CLEAR_RESULTS()
-        #define PROFILER_PRINT_RESULTS()
-    #endif
+    #define GABPROFILER_PRINT()
 #endif
 
-#ifdef GABPROFILER_IMPLEMENTATION
+#if defined(GABPROFILER_IMPLEMENTATION) && GABPROFILER_ENABLE
 
-#ifdef _WIN32
-#include <windows.h>
-static LARGE_INTEGER s_Frequency;
-#endif
+#include <stdio.h>
 
-#ifdef __APPLE__
-#include <mach/mach_time.h>
-#endif
-
-#include <time.h>
-
-#if !defined(_WIN32) && !defined(__APPLE__)
-#define _POSIX_C_SOURCE 199309L
+#if defined(_WIN32)
+    #include <windows.h>
+    static LARGE_INTEGER s_Frequency;
+#elif defined(__APPLE__)
+    #include <mach/mach_time.h>
+#else
+    #include <time.h>
 #endif
 
 static double gab_time_ms(void)
 {
-#ifdef _WIN32
+#if defined(_WIN32)
     LARGE_INTEGER t;
     QueryPerformanceCounter(&t);
     return (double)t.QuadPart * 1000.0 / (double)s_Frequency.QuadPart;
@@ -365,97 +326,39 @@ static double gab_time_ms(void)
 #else
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
-
     return ts.tv_sec * 1000.0 + ts.tv_nsec / 1e6;
 #endif
 }
 
+#if defined(_MSC_VER)
+    #define GAB_THREAD_LOCAL __declspec(thread)
+#else
+    #define GAB_THREAD_LOCAL __thread
+#endif
+
+#define GAB_MAX_NODES 2048
+
 typedef struct
 {
-    const char* name;
-    float cpuTime;
-#ifdef GAB_GL
-    GLuint query;
-#endif
-    int hasQuery;
-} GPUQueryData;
+    GABProfileNode nodes[GAB_MAX_NODES];
+    uint32_t nodeCount;
 
-static uint32_t s_CurrentFrame = 0;
-static uint32_t s_QueryIndex = 0;
+    GABProfileNode* current;
+    GABProfileNode* firstRoot;
+    GABProfileNode* lastRoot;
+} GABThreadContext;
 
-#ifdef GAB_GL
-static GLuint s_QueryPool[GABQUERY_LATENCY][GABMAX_QUERIES_PER_FRAME];
-#endif
+GAB_THREAD_LOCAL static GABThreadContext g_ctx;
 
-static GPUQueryData s_FrameQueries[GABQUERY_LATENCY][GABMAX_QUERIES_PER_FRAME];
-static uint32_t s_FrameQueryCounts[GABQUERY_LATENCY];
+static int g_initialized = 0;
 
-static GABProfileResult s_Results[GABMAX_QUERIES_PER_FRAME];
-static uint32_t s_ResultCount = 0;
-
-static void resolve_frame(const uint32_t frameIndex)
+static void gabprofiler_init(void)
 {
-    uint32_t count = s_FrameQueryCounts[frameIndex];
+    if (g_initialized) return;
+    g_initialized = 1;
 
-    for (uint32_t i = 0; i < count; i++)
-    {
-        GPUQueryData* q = &s_FrameQueries[frameIndex][i];
-
-        float gpuTime = 0.0f;
-
-#ifdef GAB_GL
-        if (q->hasQuery)
-        {
-            GLuint64 timeElapsed = 0;
-            glGetQueryObjectui64v(q->query, GL_QUERY_RESULT, &timeElapsed);
-            gpuTime = (float)(timeElapsed / 1000000.0);
-        }
-#endif
-
-        if (s_ResultCount < GABMAX_QUERIES_PER_FRAME)
-        {
-            s_Results[s_ResultCount++] = (GABProfileResult){
-                q->name,
-                q->cpuTime,
-                gpuTime
-            };
-        }
-    }
-
-    s_FrameQueryCounts[frameIndex] = 0;
-}
-
-static int isProfilerInitialized = 0;
-
-void gabprofiler_init(void)
-{
-    if (isProfilerInitialized) return;
-    isProfilerInitialized = 1;
-
-#ifdef _WIN32
+#if defined(_WIN32)
     QueryPerformanceFrequency(&s_Frequency);
-#endif
-
-#ifdef GAB_GL
-    for (uint32_t i = 0; i < GABQUERY_LATENCY; i++)
-    {
-        glGenQueries(GABMAX_QUERIES_PER_FRAME, s_QueryPool[i]);
-    }
-#endif
-
-    for (uint32_t i = 0; i < GABQUERY_LATENCY; i++)
-    {
-        s_FrameQueryCounts[i] = 0;
-    }
-}
-
-void gabprofiler_shutdown(void)
-{
-#ifdef GAB_GL
-    for (uint32_t i = 0; i < GABQUERY_LATENCY; i++)
-    {
-        glDeleteQueries(GABMAX_QUERIES_PER_FRAME, s_QueryPool[i]);
-    }
 #endif
 }
 
@@ -463,78 +366,123 @@ void gabprofiler_begin_frame(void)
 {
     gabprofiler_init();
 
-    s_ResultCount = 0;
-
-    s_CurrentFrame = (s_CurrentFrame + 1) % GABQUERY_LATENCY;
-    s_QueryIndex = 0;
-
-    uint32_t resolveIndex = (s_CurrentFrame + 1) % GABQUERY_LATENCY;
-    resolve_frame(resolveIndex);
+    g_ctx.nodeCount = 0;
+    g_ctx.current = NULL;
+    g_ctx.firstRoot = NULL;
+    g_ctx.lastRoot = NULL;
 }
-
-#ifdef GAB_GL
-static GLuint acquire_query(void)
-{
-    if (s_QueryIndex >= GABMAX_QUERIES_PER_FRAME)
-        return 0;
-
-    return s_QueryPool[s_CurrentFrame][s_QueryIndex++];
-}
-#endif
 
 GABProfilerScope gabprofiler_begin(const char* name)
 {
     GABProfilerScope scope;
-    scope.name = name;
-    scope.query = 0;
-    scope.hasQuery = 0;
-    scope.start = gab_time_ms();
 
-#ifdef GAB_GL
-    GLuint q = acquire_query();
-    if (q)
+    GABProfileNode* parent = g_ctx.current;
+    GABProfileNode* node = NULL;
+
+    if (parent)
     {
-        scope.query = q;
-        scope.hasQuery = 1;
-        glBeginQuery(GL_TIME_ELAPSED, q);
+        for (GABProfileNode* c = parent->firstChild; c; c = c->nextSibling)
+        {
+            if (c->name == name)
+            {
+                node = c;
+                break;
+            }
+        }
     }
-#endif
+    else
+    {
+        for (GABProfileNode* r = g_ctx.firstRoot; r; r = r->nextSibling)
+        {
+            if (r->name == name)
+            {
+                node = r;
+                break;
+            }
+        }
+    }
+
+    if (!node)
+    {
+        if (g_ctx.nodeCount >= GAB_MAX_NODES)
+        {
+            scope.node = NULL;
+            scope.start = 0;
+            return scope;
+        }
+
+        node = &g_ctx.nodes[g_ctx.nodeCount++];
+        node->name = name;
+        node->cpuTime = 0.0f;
+        node->firstChild = NULL;
+        node->lastChild = NULL;
+        node->nextSibling = NULL;
+        node->parent = parent;
+
+        if (parent)
+        {
+            if (!parent->firstChild)
+            {
+                parent->firstChild = parent->lastChild = node;
+            }
+            else
+            {
+                parent->lastChild->nextSibling = node;
+                parent->lastChild = node;
+            }
+        }
+        else
+        {
+            if (!g_ctx.firstRoot)
+            {
+                g_ctx.firstRoot = g_ctx.lastRoot = node;
+            }
+            else
+            {
+                g_ctx.lastRoot->nextSibling = node;
+                g_ctx.lastRoot = node;
+            }
+        }
+    }
+
+    g_ctx.current = node;
+
+    scope.node = node;
+    scope.start = gab_time_ms();
 
     return scope;
 }
 
 void gabprofiler_end(GABProfilerScope* scope)
 {
-    if (!scope->name)
-        return;
-
-#ifdef GAB_GL
-    if (scope->hasQuery)
-        glEndQuery(GL_TIME_ELAPSED);
-#endif
+    if (!scope->node) return;
 
     double end = gab_time_ms();
-    float cpuTime = (float)(end - scope->start);
+    scope->node->cpuTime += (float)(end - scope->start);
 
-    uint32_t index = s_FrameQueryCounts[s_CurrentFrame];
-
-    if (index < GABMAX_QUERIES_PER_FRAME)
-    {
-        s_FrameQueries[s_CurrentFrame][index].name = scope->name;
-        s_FrameQueries[s_CurrentFrame][index].cpuTime = cpuTime;
-        s_FrameQueries[s_CurrentFrame][index].hasQuery = scope->hasQuery;
-
-#ifdef GAB_GL
-        s_FrameQueries[s_CurrentFrame][index].query = scope->query;
-#endif
-        s_FrameQueryCounts[s_CurrentFrame]++;
-    }
+    g_ctx.current = scope->node->parent;
 }
 
-const GABProfileResult* gabprofiler_get_results(uint32_t* count)
+GABProfileNode* gabprofiler_get_root(void)
 {
-    *count = s_ResultCount;
-    return s_Results;
+    return g_ctx.firstRoot;
+}
+
+static void gabprofiler_print_node(GABProfileNode* node, int depth)
+{
+    for (int i = 0; i < depth; i++)
+        printf("  ");
+
+    printf("\033[96m[%s]\033[0m: %.3f ms\n", node->name, node->cpuTime);
+
+    for (GABProfileNode* c = node->firstChild; c; c = c->nextSibling)
+        gabprofiler_print_node(c, depth + 1);
+}
+
+void gabprofiler_print(void)
+{
+    for (GABProfileNode* n = g_ctx.firstRoot; n; n = n->nextSibling)
+        gabprofiler_print_node(n, 0);
 }
 
 #endif /* GABPROFILER_IMPLEMENTATION */
