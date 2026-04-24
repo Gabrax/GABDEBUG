@@ -1,67 +1,22 @@
-## 📝 Logging
+<div align="center">
 
-* Multiple log levels (TRACE → CRITICAL)
-* Colored output (Windows/Linux/macOS)
-* Thread-safe
-* File + line reporting
-* Assertions with debugger break
+# Logging
 
-## ⏱ Profiling
-
-* High-resolution CPU timing (cross-platform)
-* Optional GPU timing (OpenGL)
-* Scoped profiling macros
-* Frame-based system (no GPU stalls)
-* Automatic lazy initialization
-
-# 📦 Installation
-
-1. Copy `GABDEBUG.h` into your project
-
-2. In **one** source file:
+</div>
 
 ```c
-#define GABDEBUG_IMPLEMENTATION
-#define GABPROFILER_IMPLEMENTATION
-#include "GABDEBUG.h"
+GABLOG_TRACE("Trace message");
+GABLOG_INFO("Hello %s", "world");
+GABLOG_WARN("Warning!");
+GABLOG_ERROR("Error occurred");
+GABLOG_ASSERT(!x, "Assertion failed: %d is false, x);
 ```
 
-3. In all other files:
-
-```c
-#include "GABDEBUG.h"
-```
-
-## Enable / Disable systems
-
-```c
-#define GABDEBUG_ENABLE 0
-#define GABPROFILER_ENABLE 0
-```
-
-* Completely removes code at compile time
-* Zero runtime cost
-
-## Prefix Stripping (Optional)
-
-Enable shorter macros:
-
-```c
-#define GABDEBUG_STRIP_PREFIX
-#define GABPROFILER_STRIP_PREFIX
-```
-
-# Logging Usage
-
-```c
-GAB_TRACE("Trace message");
-GAB_INFO("Hello %s", "world");
-GAB_WARN("Warning!");
-GAB_ERROR("Error occurred");
-GAB_ASSERT(!x, "Assertion failed: %d is false, x);
-```
+<div align="center">
 
 ### Output
+
+</div>
 
 ```text
 [INFO] Hello world (main.c:10)
@@ -69,26 +24,23 @@ GAB_ASSERT(!x, "Assertion failed: %d is false, x);
 [ERROR] Error occurred (main.c:12)
 ```
 
+<div align="center">
 
-```c
-GABDEBUG_set_level(LOG_WARN);
-```
+# Profiling
 
-# ⏱ Profiler Usage
-
-## Basic Frame Loop
+</div>
 
 ```c
 for (;;)
 {
-    GABPROFILER_CLEAR_RESULTS();
+    GABPROFILER_CLEAR();
 
     GABPROFILE_SCOPE("Frame")
     {
         // your code here
     }
 
-    GABPROFILER_PRINT_RESULTS();
+    GABPROFILER_PRINT();
 }
 ```
 
@@ -106,7 +58,7 @@ Requirements:
 * Results appear after a few frames (latency buffering)
 
 
-## Example Output
+Example Output
 
 ```text
 Frame: CPU 16.42 ms | GPU 14.87 ms
@@ -114,7 +66,6 @@ Update: CPU 5.10 ms | GPU 0.00 ms
 Render: CPU 11.20 ms | GPU 14.80 ms
 ```
 
-# 🔁 Profiler Architecture
 
 The profiler is **frame-based**:
 
@@ -131,21 +82,56 @@ This avoids GPU stalls and keeps performance consistent.
 #define gabQUERY_LATENCY 3
 ```
 
-# 🔒 Thread Safety
+<div align="center">
 
-* Logging: ✅ thread-safe
-* Profiler: ⚠️ single-threaded
+# Installation
 
-# ⚠️ Notes
+</div>
 
-* First few frames may have no GPU data (expected)
-* CPU work must not be optimized away (use `volatile`)
-* Always profile in **Release mode**
-* GPU timing requires actual draw calls
+1. Copy `GABDEBUG.h` into your project
 
-# 🛠 Future Improvements
+2. In **one** source file:
 
-* [ ] Hierarchical profiler (tree view)
-* [ ] Async logging
-* [ ] Thread-safe profiler
-* [ ] More GPU API support
+```c
+#define GABDEBUG_IMPLEMENTATION
+#define GABPROFILER_IMPLEMENTATION
+#include "gabdebug.h"
+```
+
+3. In all other files:
+
+```c
+#include "gabdebug.h"
+```
+
+<div align="center">
+
+### Enable / Disable systems
+
+</div>
+
+```c
+#define GABDEBUG_ENABLE 0
+#define GABPROFILER_ENABLE 0
+```
+
+* Completely removes code at compile time
+* Zero runtime cost
+
+<div align="center">
+
+### Prefix Stripping (Optional)
+
+</div>
+
+Enable shorter macros:
+
+```c
+#define GABDEBUG_STRIP_PREFIX
+#define GABPROFILER_STRIP_PREFIX
+```
+
+
+```c
+GABDEBUG_set_level(LOG_WARN);
+```

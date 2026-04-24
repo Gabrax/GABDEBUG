@@ -245,6 +245,15 @@ void gablog_log(const LogLevel level, const char* file, int line, const char* fm
     #define GABPROFILER_ENABLE 1
 #endif
 
+#ifndef GABPROFILER_UNSTRIP_PREFIX
+    #define GABPROFILER_STRIP_PREFIX
+#endif
+
+#if defined(GABPROFILER_GL) || defined(GABPROFILER_VK) || \
+defined(GABPROFILER_DX) || defined(GABPROFILER_MTL)
+#define GABPROFILER_GPU
+#endif
+
 #if GABPROFILER_ENABLE
 
 typedef struct GABProfileNode
@@ -252,10 +261,15 @@ typedef struct GABProfileNode
     const char* name;
     float cpuTime;
 
-    struct GABProfileNode* parent;
-    struct GABProfileNode* firstChild;
-    struct GABProfileNode* lastChild;
-    struct GABProfileNode* nextSibling;
+#if GABPROFILER_GPU
+    float gpuTime;
+    unsigned int query[3];
+#endif
+
+    GABProfileNode* parent;
+    GABProfileNode* firstChild;
+    GABProfileNode* lastChild;
+    GABProfileNode* nextSibling;
 } GABProfileNode;
 
 #define GAB_MAX_NODES 2048
@@ -265,6 +279,10 @@ typedef struct
 {
     GABProfileNode nodes[GAB_MAX_NODES];
     unsigned int nodeCount;
+
+#if GABPROFILER_GPU
+    int frameIndex;
+#endif
 
     GABProfileNode* current;
     GABProfileNode* firstRoot;
@@ -297,10 +315,23 @@ void gabprofiler_print(void);
 
 #define GABPROFILER_PRINT() gabprofiler_print()
 
+#ifdef GABPROFILER_STRIP_PREFIX
+    #define PROFILER_CLEAR() GABPROFILER_CLEAR()
+    #define PROFILER_SCOPE(name) GABPROFILER_SCOPE(name)
+    #define PROFILER_PRINT() GABPROFILER_PRINT()
+#endif
+
 #else
     #define GABPROFILER_CLEAR()
     #define GABPROFILE_SCOPE(name)
     #define GABPROFILER_PRINT()
+
+#ifdef GABPROFILER_STRIP_PREFIX
+    #define PROFILER_CLEAR()
+    #define PROFILER_SCOPE(name)
+    #define PROFILER_PRINT()
+#endif
+
 #endif
 
 #if defined(GABPROFILER_IMPLEMENTATION) && GABPROFILER_ENABLE
@@ -331,6 +362,29 @@ static int g_threadCount = 0;
 GAB_THREAD_LOCAL static GABThreadContext g_ctx;
 GAB_THREAD_LOCAL static int g_registered = 0;
 
+typedef struct
+{
+    const char* name;
+    float cpuTime;
+#ifdef GAB_GL
+    GLuint query;
+#endif
+    int hasQuery;
+} GPUQueryData;
+
+#define GABMAX_QUERIES_PER_FRAME 256
+#define GABQUERY_LATENCY 3
+
+static uint32_t s_CurrentFrame = 0;
+static uint32_t s_QueryIndex = 0;
+
+#ifdef GAB_GL
+static GLuint s_QueryPool[GABQUERY_LATENCY][GABMAX_QUERIES_PER_FRAME];
+#endif
+
+static GPUQueryData s_FrameQueries[GABQUERY_LATENCY][GABMAX_QUERIES_PER_FRAME];
+static uint32_t s_FrameQueryCounts[GABQUERY_LATENCY];
+
 static double gab_time_ms(void)
 {
 #if defined(_WIN32)
@@ -338,7 +392,7 @@ static double gab_time_ms(void)
     QueryPerformanceCounter(&t);
     return (double)t.QuadPart * 1000.0 / (double)s_Frequency.QuadPart;
 #else
-    struct timespec ts;
+    timespec ts{};
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return ts.tv_sec * 1000.0 + ts.tv_nsec / 1e6;
 #endif
@@ -396,6 +450,10 @@ void gabprofiler_begin_frame(void)
 {
     gabprofiler_register_thread();
 
+#if GABPROFILER_GPU
+    g_ctx.frameIndex = (g_ctx.frameIndex + 1) % 3;
+#endif
+
     g_ctx.nodeCount = 0;
     g_ctx.current = NULL;
     g_ctx.firstRoot = NULL;
@@ -432,6 +490,10 @@ GABProfilerScope gabprofiler_begin(const char* name)
         node = &g_ctx.nodes[g_ctx.nodeCount++];
         node->name = name;
         node->cpuTime = 0.0f;
+#if GABPROFILER_GPU
+        node->gpuTime = 0;
+        glGenQueries(3, node->query);
+#endif
         node->firstChild = NULL;
         node->lastChild = NULL;
         node->nextSibling = NULL;
@@ -463,12 +525,34 @@ GABProfilerScope gabprofiler_begin(const char* name)
 
     scope.node = node;
     scope.start = gab_time_ms();
+#if GABPROFILER_GPU
+    glBeginQuery(GL_TIME_ELAPSED, node->query[g_ctx.frameIndex]);
+#endif
     return scope;
 }
 
 void gabprofiler_end(GABProfilerScope* scope)
 {
     if (!scope->node) return;
+
+#if GABPROFILER_GPU
+    glEndQuery(GL_TIME_ELAPSED);
+
+    int readIndex = (g_ctx.frameIndex + 1) % 3;
+
+    GLuint64 time = 0;
+    if (glGetQueryObjectui64v)
+    {
+        GLint available = 0;
+        glGetQueryObjectiv(scope->node->query[readIndex], GL_QUERY_RESULT_AVAILABLE, &available);
+
+        if (available)
+        {
+            glGetQueryObjectui64v(scope->node->query[readIndex], GL_QUERY_RESULT, &time);
+            scope->node->gpuTime = (float)(time / 1000000.0);
+        }
+    }
+#endif
 
     double end = gab_time_ms();
     scope->node->cpuTime += (float)(end - scope->start);
@@ -478,10 +562,13 @@ void gabprofiler_end(GABProfilerScope* scope)
 
 static void gabprofiler_print_node(GABProfileNode* node, int depth)
 {
-    for (int i = 0; i < depth; i++)
-        printf("  ");
+    for (int i = 0; i < depth; i++) printf("  ");
 
-    printf("\033[96m[%s]\033[0m: %.3f ms\n", node->name, node->cpuTime);
+#if GABPROFILER_GPU
+    printf("\033[96m[%s]\033[0m CPU: %.3f ms | GPU: %.3f ms\n", node->name, node->cpuTime, node->gpuTime);
+#else
+    printf("\033[96m[%s]\033[0m CPU: %.3f ms\n", node->name, node->cpuTime);
+#endif
 
     for (GABProfileNode* c = node->firstChild; c; c = c->nextSibling)
         gabprofiler_print_node(c, depth + 1);
@@ -511,7 +598,7 @@ void gabprofiler_print(void)
 #endif
 }
 
-#endif
+#endif /* GABPROFILER_IMPLEMENTATION */
 
 #ifdef __cplusplus
 }
