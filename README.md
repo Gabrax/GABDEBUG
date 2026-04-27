@@ -14,11 +14,9 @@ GABLOG_ASSERT(!x, "Assertion failed: %d is false, x);
 
 Example Output:
 
-```text
-[INFO] Hello world (main.c:10)
-[WARN] Warning! (main.c:11)
-[ERROR] Error occurred (main.c:12)
-```
+<img width="393" height="109" alt="{E9B8F1CD-D0E2-435B-BC18-C7BF35311187}" src="https://github.com/user-attachments/assets/b63ad1b6-5fb8-4e16-881a-b009d401c3fe" />
+
+</br>
 
 To disable logging less than specified alert level, use this function:
 
@@ -37,9 +35,19 @@ for (;;)
 {
     GABPROFILER_CLEAR();
 
-    GABPROFILE_SCOPE("Frame")
+    GABPROFILE_SCOPE("Big frame")
     {
-        // your code here
+        GABPROFILE_SCOPE("Small Frame")
+        {
+            GABPROFILE_SCOPE("Test A") {}
+            GABPROFILE_SCOPE("Test B") {}
+        }
+
+        GABPROFILE_SCOPE("Small Frame2")
+        {
+            GABPROFILE_SCOPE("Test A1") {}
+            GABPROFILE_SCOPE("Test B2") {}
+        }
     }
 
     GABPROFILER_PRINT();
@@ -48,12 +56,9 @@ for (;;)
 
 Example Output:
 
-```text
-Frame: CPU 16.42 ms | GPU 14.87 ms
-Update: CPU 5.10 ms | GPU 0.00 ms
-Render: CPU 11.20 ms | GPU 14.80 ms
-```
+<img width="390" height="175" alt="{E44A902D-94E7-493D-87C8-CC8BA6AB2774}" src="https://github.com/user-attachments/assets/5030f46d-5500-4f12-bc47-7466272d4132" />
 
+</br>
 
 The profiler is frame-based, which avoids GPU stalls and keeps performance consistent.
 
