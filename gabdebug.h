@@ -46,8 +46,7 @@ void gablog_log(LogLevel level, const char* file, int line, const char* fmt, ...
     #define GABLOG_ASSERT(x, fmt, ...)                                      \
     do {                                                                    \
         if (!(x)) {                                                         \
-            gablog_log(LOG_ASSERT, __FILE__, __LINE__,                      \
-            fmt, ##__VA_ARGS__);                                            \
+            gablog_log(LOG_ASSERT, __FILE__, __LINE__, fmt, ##__VA_ARGS__); \
             DEBUG_BREAK();                                                  \
         }                                                                   \
     } while(0)
@@ -193,7 +192,7 @@ static const char* LevelColor(const LogLevel level)
         case LOG_INFO:     return "\033[32m";
         case LOG_WARN:     return "\033[33m";
         case LOG_ERROR:    return "\033[31m";
-        case LOG_ASSERT:   return "\033[41m";
+        case LOG_ASSERT:   return "\033[35m";
         default:           return "\033[0m";
     }
 }
